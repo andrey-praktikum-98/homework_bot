@@ -3,7 +3,6 @@ import os
 import sys
 import time
 from logging import StreamHandler
-from pytest import Instance
 
 import requests
 from dotenv import load_dotenv
