@@ -91,7 +91,7 @@ def check_response(response):
         logger.error('Отсутствует ключ "homeworks"')
         raise KeyError('Отсутствует ключ "homeworks"')
     homework = response.get('homeworks')
-    if not type(response.get('homeworks')) is list:
+    if not type(homework) is list:
         logger.error('Список работ не в формате list')
         raise KeyError('Список работ не в формате list')
     return homework
