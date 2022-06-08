@@ -2,10 +2,15 @@ import logging
 import os
 import sys
 import time
+import pprint
+import json
 from logging import StreamHandler
+from http import HTTPStatus
+
 
 import requests
 from dotenv import load_dotenv
+from telegram import TelegramError
 from telegram import Bot
 
 
@@ -46,6 +51,10 @@ def send_message(bot, message):
             text=message
         )
         logger.info(f'Бот отправил сообщение "{message}"')
+    except TelegramError as error:
+        logger.error(
+            f'При отправке сообщения "{message}" возникла ошибка "{error}".'
+        )
     except Exception as error:
         logger.error(
             f'При отправке сообщения "{message}" возникла ошибка "{error}".'
@@ -55,16 +64,24 @@ def send_message(bot, message):
 def get_api_answer(current_timestamp):
     """Запрос к API, ответ, приведенный к типам данных Python."""
     params = {'from_date': current_timestamp}
-    response = requests.get(ENDPOINT, headers=HEADERS, params=params)
-    if response.status_code != 200:
+    try:
+        response = requests.get(ENDPOINT, headers=HEADERS, params=params)
+    except requests.exceptions.RequestException as e:
+        logger.error(f'Сервис недоступен, ошибка {e}')
+        raise SystemExit('Сервис недоступен')
+    if response.status_code != HTTPStatus.OK:
         logger.error(
-            f'При запросе к эндпоинту вернулся код ответа \
-            {response.status_code}'
-        )
+            f'При запросе к эндпоинту'
+            f'вернулся код ответа {response.status_code}')
         raise requests.ConnectionError(
-            f'При запросе к эндпоинту вернулся код ответа \
-            {response.status_code}')
-    return response.json()
+            f'При запросе к эндпоинту'
+            f'вернулся код ответа {response.status_code}')
+    pprint.pprint(response.json())
+    try:
+        response_api = response.json()
+    except json.decoder.JSONDecodeError as e:
+        logger.error(f'Сервис недоступен, ошибка {e}')
+    return response_api
 
 
 def check_response(response):
@@ -72,25 +89,29 @@ def check_response(response):
     if not isinstance(response, dict):
         logger.error('Ответ не в формате dict')
         raise TypeError('Ответ не в формате dict')
-    if not type(response.get('homeworks')) is list:
-        logger.error('Список работ не в формате list')
-        raise KeyError('Список работ не в формате list')
-    elif not response.get('homeworks'):
+    if not response.get('homeworks'):
         logger.error('Отсутствует ключ "homeworks"')
         raise KeyError('Отсутствует ключ "homeworks"')
-    return response.get('homeworks')
+    homework = response.get('homework')
+    if not type(homework) is list:
+        logger.error('Список работ не в формате list')
+        raise KeyError('Список работ не в формате list')
+    return homework
 
 
 def parse_status(homework):
     """Извлекает статус проверки работы, возвращает текст сообщения."""
+    if homework.get('homework_name') is None:
+        logger.error('Отсутствует ключ "homework_name"')
+        raise KeyError('Отсутствует ключ "homework_name"')
     homework_name = homework.get('homework_name')
     if not homework.get('status'):
         logger.error('Отсутствует ключ "status"')
         raise KeyError('Отсутствует ключ "status"')
-    if homework.get('status') not in HOMEWORK_STATUSES:
+    homework_status = homework.get('status')
+    if homework_status not in HOMEWORK_STATUSES:
         logger.error('Неизвестный статус проверки работы')
         raise KeyError('Неизвестный статус проверки работы')
-    homework_status = homework.get('status')
     verdict = HOMEWORK_STATUSES.get(homework_status)
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
@@ -119,9 +140,10 @@ def check_tokens():
 def main():
     """Основная логика работы бота."""
     if not check_tokens():
+        logger.error('Проверка токена передает пустое значение')
         return None
     bot = Bot(token=TELEGRAM_TOKEN)
-    current_timestamp = int(0)
+    current_timestamp = int(time.time())
     message = ''
     prev_message = ''
     while True:
@@ -130,8 +152,9 @@ def main():
             homeworks = check_response(response)
             if homeworks is not None:
                 message = parse_status(homeworks[0])
-                current_timestamp = response.get('current_timestamp')
-                print(message)
+                current_timestamp = response.get(
+                    'current_date',
+                    current_timestamp)
                 send_message(bot, message)
             time.sleep(RETRY_TIME)
 
@@ -139,11 +162,10 @@ def main():
             message = f'Сбой в работе программы: {error}'
             logger.error(message)
             send_message(bot, message)
-
+            time.sleep(RETRY_TIME)
         else:
             if message != prev_message:
                 send_message(bot, message)
-                message = prev_message
 
 
 if __name__ == '__main__':
