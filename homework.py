@@ -2,7 +2,6 @@ import logging
 import os
 import sys
 import time
-import pprint
 import json
 from logging import StreamHandler
 from http import HTTPStatus
@@ -76,7 +75,6 @@ def get_api_answer(current_timestamp):
         raise requests.ConnectionError(
             f'При запросе к эндпоинту'
             f'вернулся код ответа {response.status_code}')
-    pprint.pprint(response.json())
     try:
         response_api = response.json()
     except json.decoder.JSONDecodeError as e:
