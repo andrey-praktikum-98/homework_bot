@@ -7,5 +7,5 @@
 2. установить виртуальное окружение с помощью requirements.txt
 3. создать файл .env и добавить ключи для работы бота PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
 4. запустить файл homework.py
-# Установка
+# Автор
 Автор проекта: andrey-praktikum-98
