@@ -1,17 +1,14 @@
+import json
 import logging
 import os
 import sys
 import time
-import json
-from logging import StreamHandler
 from http import HTTPStatus
-
+from logging import StreamHandler
 
 import requests
 from dotenv import load_dotenv
-from telegram import TelegramError
-from telegram import Bot
-
+from telegram import Bot, TelegramError
 
 load_dotenv()
 
@@ -44,6 +41,8 @@ logger.addHandler(handler)
 
 def send_message(bot, message):
     """Отправляет сообщение со статусом проверки работы в Телеграм чат."""
+    text_hint_error = f'При отправке сообщения "{message}" возникла ошибка '
+    text_hint_bad_req = 'Сервис недоступен, ошибка'
     try:
         bot.send_message(
             chat_id=TELEGRAM_CHAT_ID,
@@ -51,34 +50,32 @@ def send_message(bot, message):
         )
         logger.info(f'Бот отправил сообщение "{message}"')
     except TelegramError as error:
-        logger.error(
-            f'При отправке сообщения "{message}" возникла ошибка "{error}".'
-        )
+        logger.error(f'{text_hint_error} : {error}')
+        raise requests.ConnectionError(f'{text_hint_bad_req} : {error}')
     except Exception as error:
-        logger.error(
-            f'При отправке сообщения "{message}" возникла ошибка "{error}".'
-        )
+        logger.error(f'{text_hint_error} : {error}')
+        raise requests.ConnectionError(f'{text_hint_bad_req} : {error}')
 
 
 def get_api_answer(current_timestamp):
     """Запрос к API, ответ, приведенный к типам данных Python."""
+    text_hint_error = 'При запросе к эндпоинту вернулся код ответа'
+    text_hint_bad_conect = 'Сервис недоступен, ошибка'
     params = {'from_date': current_timestamp}
     try:
         response = requests.get(ENDPOINT, headers=HEADERS, params=params)
     except requests.exceptions.RequestException as e:
-        logger.error(f'Сервис недоступен, ошибка {e}')
+        logger.error(f'{text_hint_bad_conect} : {e}')
         raise SystemExit('Сервис недоступен')
     if response.status_code != HTTPStatus.OK:
-        logger.error(
-            f'При запросе к эндпоинту'
-            f'вернулся код ответа {response.status_code}')
+        logger.error(f'{text_hint_error} : {response.status_code}')
         raise requests.ConnectionError(
-            f'При запросе к эндпоинту'
-            f'вернулся код ответа {response.status_code}')
+            f'{text_hint_error} : {response.status_code}')
     try:
         response_api = response.json()
     except json.decoder.JSONDecodeError as e:
-        logger.error(f'Сервис недоступен, ошибка {e}')
+        logger.error(f'{text_hint_bad_conect} : {e}')
+        raise requests.JSONDecodeError
     return response_api
 
 
@@ -87,26 +84,26 @@ def check_response(response):
     if not isinstance(response, dict):
         logger.error('Ответ не в формате dict')
         raise TypeError('Ответ не в формате dict')
-    if not response.get('homeworks'):
+    homeworks = response.get('homeworks')
+    if not homeworks:
         logger.error('Отсутствует ключ "homeworks"')
         raise KeyError('Отсутствует ключ "homeworks"')
-    homework = response.get('homeworks')
-    if not type(homework) is list:
+    if not type(homeworks) is list:
         logger.error('Список работ не в формате list')
         raise KeyError('Список работ не в формате list')
-    return homework
+    return homeworks
 
 
 def parse_status(homework):
     """Извлекает статус проверки работы, возвращает текст сообщения."""
-    if homework.get('homework_name') is None:
+    homework_name = homework.get('homework_name')
+    if homework_name is None:
         logger.error('Отсутствует ключ "homework_name"')
         raise KeyError('Отсутствует ключ "homework_name"')
-    homework_name = homework.get('homework_name')
-    if not homework.get('status'):
+    homework_status = homework.get('status')
+    if not homework_status:
         logger.error('Отсутствует ключ "status"')
         raise KeyError('Отсутствует ключ "status"')
-    homework_status = homework.get('status')
     if homework_status not in HOMEWORK_STATUSES:
         logger.error('Неизвестный статус проверки работы')
         raise KeyError('Неизвестный статус проверки работы')
@@ -143,7 +140,6 @@ def main():
     bot = Bot(token=TELEGRAM_TOKEN)
     current_timestamp = int(time.time())
     message = ''
-    prev_message = ''
     while True:
         try:
             response = get_api_answer(current_timestamp)
@@ -162,7 +158,7 @@ def main():
             send_message(bot, message)
             time.sleep(RETRY_TIME)
         else:
-            if message != prev_message:
+            if message != '':
                 send_message(bot, message)
 
 
